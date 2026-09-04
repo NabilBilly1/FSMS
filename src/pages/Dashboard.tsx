@@ -273,6 +273,24 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const handleDeleteLog = async (id: number, type: "sms" | "email") => {
+    if (!confirm(`Are you sure you want to delete this ${type.toUpperCase()} log?`)) return;
+
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${API_BASE_URL}/${type}/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        fetchData();
+      }
+    } catch (err: any) {
+      console.error(`Delete ${type} log error:`, err);
+      setError(`Failed to delete ${type} log. Please try again.`);
+    }
+  };
+
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
@@ -647,13 +665,9 @@ const Dashboard: React.FC = () => {
                         ? "Scheduled Date & Time"
                         : "Date"}
                     </th>
-                    {(activeTab === "Templates" ||
-                      activeTab === "Customers" ||
-                      activeTab === "Pending") && (
-                        <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 text-right">
-                          Actions
-                        </th>
-                      )}
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 text-right">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -837,6 +851,17 @@ const Dashboard: React.FC = () => {
                             })
                             : new Date(item.created_at).toLocaleDateString()}
                         </td>
+                        {(activeTab === "SMS Logs" || activeTab === "Email Logs") && (
+                          <td className="px-6 py-4 text-right flex justify-end space-x-2">
+                            <button
+                              onClick={() => handleDeleteLog(item.id, activeTab === "SMS Logs" ? "sms" : "email")}
+                              className="p-1.5 text-red-400 hover:text-red-600 transition-colors bg-red-50 rounded-lg"
+                              title="Delete Log"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </td>
+                        )}
                         {activeTab === "Templates" && (
                           <td className="px-6 py-4 text-right">
                             <button

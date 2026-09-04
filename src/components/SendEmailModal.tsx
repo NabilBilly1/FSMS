@@ -47,6 +47,7 @@ const SendEmailModal: React.FC<SendEmailModalProps> = ({
     "single",
   );
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>([]);
   const [filterType, setFilterType] = useState<string>("all");
 
   const [subject, setSubject] = useState("");
@@ -151,6 +152,12 @@ const SendEmailModal: React.FC<SendEmailModalProps> = ({
       return;
     }
 
+    // Validation: Custom selection must have at least 2 customers
+    if (recipientMode === "group" && filterType === "custom_selection" && selectedCustomerIds.length < 2) {
+      setError("Please select at least two customers for custom selection.");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -168,6 +175,7 @@ const SendEmailModal: React.FC<SendEmailModalProps> = ({
           scheduled_for: scheduledFor
             ? new Date(scheduledFor).toISOString()
             : null,
+          customer_ids: filterType === "custom_selection" ? selectedCustomerIds.map(Number) : undefined,
         }
         : {
           recipient_email: customers.find(
@@ -349,7 +357,48 @@ const SendEmailModal: React.FC<SendEmailModalProps> = ({
                     <option value="today">Registered Today</option>
                     <option value="week">Past 7 Days</option>
                     <option value="month">Current Month</option>
+                    <option value="custom_selection">Custom Selection</option>
                   </select>
+                  
+                  {filterType === "custom_selection" && (
+                    <div className="mt-4 border border-gray-200 rounded-xl bg-gray-50 max-h-48 overflow-y-auto p-2">
+                      {filteredCustomers.length === 0 ? (
+                        <p className="text-sm text-gray-500 p-2 italic text-center">
+                          No customers available.
+                        </p>
+                      ) : (
+                        <div className="space-y-1">
+                          {filteredCustomers.map((c) => (
+                            <label
+                              key={c.id}
+                              className="flex items-center space-x-3 p-2 hover:bg-white rounded-lg cursor-pointer transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                                checked={selectedCustomerIds.includes(c.id.toString())}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedCustomerIds((prev) => [
+                                      ...prev,
+                                      c.id.toString(),
+                                    ]);
+                                  } else {
+                                    setSelectedCustomerIds((prev) =>
+                                      prev.filter((id) => id !== c.id.toString())
+                                    );
+                                  }
+                                }}
+                              />
+                              <span className="text-sm text-gray-700 font-medium truncate">
+                                {c.full_name} <span className="text-gray-400 text-xs">({c.email})</span>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
             </div>
