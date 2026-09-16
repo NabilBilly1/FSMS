@@ -9,9 +9,11 @@ import {
   AlertCircle,
   Users,
   Calendar,
+  Folder,
 } from "lucide-react";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
+import type { ContactFolder } from "./FolderModal";
 
 interface Customer {
   id: number;
@@ -31,6 +33,7 @@ interface SendEmailModalProps {
   onClose: () => void;
   onSuccess: () => void;
   onUnauthorized: () => void;
+  initialFolder?: ContactFolder | null;
 }
 
 const SendEmailModal: React.FC<SendEmailModalProps> = ({
@@ -38,10 +41,13 @@ const SendEmailModal: React.FC<SendEmailModalProps> = ({
   onClose,
   onSuccess,
   onUnauthorized,
+  initialFolder,
 }) => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [folders, setFolders] = useState<ContactFolder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
 
   const [recipientMode, setRecipientMode] = useState<"single" | "group">(
     "single",
@@ -63,8 +69,30 @@ const SendEmailModal: React.FC<SendEmailModalProps> = ({
     if (isOpen) {
       fetchCustomers();
       fetchTemplates();
+      fetchFolders();
+
+      if (initialFolder) {
+        setRecipientMode("group");
+        setFilterType("folder");
+        setSelectedFolderId(initialFolder.id);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, initialFolder]);
+
+  const fetchFolders = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_BASE_URL}/folders/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.status === 401) return onUnauthorized();
+      if (res.ok) {
+        setFolders(await res.json());
+      }
+    } catch (err) {
+      console.error("Failed to fetch folders in SendEmailModal", err);
+    }
+  };
 
   const fetchTemplates = async () => {
     try {
@@ -158,6 +186,11 @@ const SendEmailModal: React.FC<SendEmailModalProps> = ({
       return;
     }
 
+    if (recipientMode === "group" && filterType === "folder" && !selectedFolderId) {
+      setError("Please select a contact folder.");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -176,6 +209,7 @@ const SendEmailModal: React.FC<SendEmailModalProps> = ({
             ? new Date(scheduledFor).toISOString()
             : null,
           customer_ids: filterType === "custom_selection" ? selectedCustomerIds.map(Number) : undefined,
+          folder_id: filterType === "folder" ? selectedFolderId : undefined,
         }
         : {
           recipient_email: customers.find(
@@ -357,8 +391,58 @@ const SendEmailModal: React.FC<SendEmailModalProps> = ({
                     <option value="today">Registered Today</option>
                     <option value="week">Past 7 Days</option>
                     <option value="month">Current Month</option>
+                    <option value="folder">Contact Folder / Category</option>
                     <option value="custom_selection">Custom Selection</option>
                   </select>
+
+                  {filterType === "folder" && (
+                    <div className="mt-4 p-4 bg-violet-50/70 border border-violet-100 rounded-2xl space-y-3">
+                      <label className="block text-[10px] font-bold text-violet-600 uppercase tracking-wider">
+                        Choose Contact Folder
+                      </label>
+                      {folders.length === 0 ? (
+                        <p className="text-xs text-gray-500 italic">
+                          No contact folders found. Create one using the Folder quick action on your dashboard.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          <select
+                            className="w-full p-3 bg-white border border-violet-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:ring-2 focus:ring-violet-500"
+                            value={selectedFolderId || ""}
+                            onChange={(e) => setSelectedFolderId(Number(e.target.value) || null)}
+                          >
+                            <option value="">-- Select a Folder --</option>
+                            {folders.map((f) => {
+                              const withEmailCount = f.customers.filter((c) => c.email).length;
+                              return (
+                                <option key={f.id} value={f.id}>
+                                  📁 {f.name} ({withEmailCount} with email / {f.total_contacts} total)
+                                </option>
+                              );
+                            })}
+                          </select>
+                          {selectedFolderId && (
+                            <div className="text-[11px] text-violet-700 bg-white p-2.5 rounded-lg border border-violet-100">
+                              {(() => {
+                                const f = folders.find((fol) => fol.id === selectedFolderId);
+                                if (!f) return null;
+                                const withEmail = f.customers.filter((c) => c.email);
+                                return (
+                                  <>
+                                    <p className="font-semibold">{f.name}: {withEmail.length} valid email recipient(s)</p>
+                                    <p className="text-gray-500 truncate mt-0.5">
+                                      Recipients: {withEmail.map((c) => `${c.full_name} (${c.email})`).slice(0, 4).join(", ")}
+                                      {withEmail.length > 4 ? ` and ${withEmail.length - 4} more` : ""}
+                                    </p>
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   
                   {filterType === "custom_selection" && (
                     <div className="mt-4 border border-gray-200 rounded-xl bg-gray-50 max-h-48 overflow-y-auto p-2">

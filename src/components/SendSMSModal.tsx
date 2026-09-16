@@ -9,7 +9,9 @@ import {
   Loader2,
   AlertCircle,
   User,
+  Folder,
 } from "lucide-react";
+import type { ContactFolder } from "./FolderModal";
 
 interface Customer {
   id: number;
@@ -23,6 +25,7 @@ interface SendSMSModalProps {
   onClose: () => void;
   onSuccess: () => void;
   onUnauthorized: () => void;
+  initialFolder?: ContactFolder | null;
 }
 
 interface Template {
@@ -36,10 +39,13 @@ const SendSMSModal: React.FC<SendSMSModalProps> = ({
   onClose,
   onSuccess,
   onUnauthorized,
+  initialFolder,
 }) => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [folders, setFolders] = useState<ContactFolder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(
     null,
   );
@@ -58,8 +64,30 @@ const SendSMSModal: React.FC<SendSMSModalProps> = ({
     if (isOpen) {
       fetchCustomers();
       fetchTemplates();
+      fetchFolders();
+
+      if (initialFolder) {
+        setRecipientMode("group");
+        setSelectedGroup("folder");
+        setSelectedFolderId(initialFolder.id);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, initialFolder]);
+
+  const fetchFolders = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_BASE_URL}/folders/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.status === 401) return onUnauthorized();
+      if (res.ok) {
+        setFolders(await res.json());
+      }
+    } catch (err) {
+      console.error("Failed to fetch folders in SendSMSModal", err);
+    }
+  };
 
   useEffect(() => {
     filterCustomers();
@@ -207,6 +235,11 @@ const SendSMSModal: React.FC<SendSMSModalProps> = ({
 
     if (selectedGroup === "custom_selection") return selectedCustomerIds.length;
 
+    if (selectedGroup === "folder") {
+      const folder = folders.find((f) => f.id === selectedFolderId);
+      return folder ? folder.total_contacts : 0;
+    }
+
     if (selectedGroup === "all") return customers.length;
 
     if (selectedGroup === "today") {
@@ -257,6 +290,11 @@ const SendSMSModal: React.FC<SendSMSModalProps> = ({
       return;
     }
 
+    if (recipientMode === "group" && selectedGroup === "folder" && !selectedFolderId) {
+      setError("Please select a contact folder.");
+      return;
+    }
+
     // Validation: Must select a schedule date
     if (!scheduledTime) {
       setError("Please select a schedule date and time.");
@@ -290,6 +328,7 @@ const SendSMSModal: React.FC<SendSMSModalProps> = ({
           message_type: messageType === "custom" ? "bulk_promo" : messageType,
           scheduled_for: new Date(scheduledTime).toISOString(),
           customer_ids: selectedGroup === "custom_selection" ? selectedCustomerIds : undefined,
+          folder_id: selectedGroup === "folder" ? selectedFolderId : undefined,
         }
         : {
           customer_id: selectedCustomerId,
@@ -473,9 +512,55 @@ const SendSMSModal: React.FC<SendSMSModalProps> = ({
                     <option value="month">Registered This Month</option>
                     <option value="year">Registered This Year</option>
                     <option value="all">All Customers</option>
+                    <option value="folder">Contact Folder / Category</option>
                     <option value="custom_selection">Custom Selection</option>
                   </select>
                 </div>
+
+                {selectedGroup === "folder" && (
+                  <div className="space-y-3 p-4 bg-violet-50/70 border border-violet-100 rounded-2xl">
+                    <label className="block text-[10px] font-bold text-violet-600 uppercase tracking-wider">
+                      Choose Contact Folder
+                    </label>
+                    {folders.length === 0 ? (
+                      <p className="text-xs text-gray-500 italic">
+                        No contact folders found. Create one using the Folder quick action on your dashboard.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        <select
+                          className="w-full p-3 bg-white border border-violet-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:ring-2 focus:ring-violet-500"
+                          value={selectedFolderId || ""}
+                          onChange={(e) => setSelectedFolderId(Number(e.target.value) || null)}
+                        >
+                          <option value="">-- Select a Folder --</option>
+                          {folders.map((f) => (
+                            <option key={f.id} value={f.id}>
+                              📁 {f.name} ({f.total_contacts} contacts)
+                            </option>
+                          ))}
+                        </select>
+                        {selectedFolderId && (
+                          <div className="text-[11px] text-violet-700 bg-white p-2.5 rounded-lg border border-violet-100">
+                            {(() => {
+                              const f = folders.find((fol) => fol.id === selectedFolderId);
+                              if (!f) return null;
+                              return (
+                                <>
+                                  <p className="font-semibold">{f.name}: {f.total_contacts} contacts</p>
+                                  <p className="text-gray-500 truncate mt-0.5">
+                                    Members: {f.customers.map((c) => c.full_name).slice(0, 5).join(", ")}
+                                    {f.customers.length > 5 ? ` and ${f.customers.length - 5} more` : ""}
+                                  </p>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {selectedGroup === "custom_selection" && (
                   <div className="space-y-3">

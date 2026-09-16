@@ -21,6 +21,7 @@ import {
   Calendar,
   ChevronLeft,
   Upload,
+  Folder,
 } from "lucide-react";
 
 interface StatCardProps {
@@ -74,6 +75,7 @@ import AddTemplateModal from "../components/AddTemplateModal";
 import EditCustomerModal from "../components/EditCustomerModal";
 import RescheduleModal from "../components/RescheduleModal";
 import BulkSMSImportModal from "../components/BulkSMSImportModal";
+import FolderModal, { type ContactFolder } from "../components/FolderModal";
 import { stripHtml } from "../utils/helpers";
 
 const Dashboard: React.FC = () => {
@@ -94,6 +96,9 @@ const Dashboard: React.FC = () => {
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false);
+  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+  const [activeFolderForMessaging, setActiveFolderForMessaging] =
+    useState<ContactFolder | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
   const [rescheduleItem, setRescheduleItem] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -232,6 +237,18 @@ const Dashboard: React.FC = () => {
     window.location.reload();
   };
 
+  const handleSendSMSFromFolder = (folder: ContactFolder) => {
+    setActiveFolderForMessaging(folder);
+    setIsFolderModalOpen(false);
+    setIsSMSModalOpen(true);
+  };
+
+  const handleSendEmailFromFolder = (folder: ContactFolder) => {
+    setActiveFolderForMessaging(folder);
+    setIsFolderModalOpen(false);
+    setIsEmailModalOpen(true);
+  };
+
   const handleDeleteTemplate = async (id: number) => {
     if (!confirm("Are you sure you want to delete this template?")) return;
 
@@ -324,17 +341,34 @@ const Dashboard: React.FC = () => {
       {/* Send SMS Modal */}
       <SendSMSModal
         isOpen={isSMSModalOpen}
-        onClose={() => setIsSMSModalOpen(false)}
+        onClose={() => {
+          setIsSMSModalOpen(false);
+          setActiveFolderForMessaging(null);
+        }}
         onSuccess={handleSMSSuccess}
         onUnauthorized={handleLogout}
+        initialFolder={activeFolderForMessaging}
       />
 
       {/* Send Email Modal */}
       <SendEmailModal
         isOpen={isEmailModalOpen}
-        onClose={() => setIsEmailModalOpen(false)}
+        onClose={() => {
+          setIsEmailModalOpen(false);
+          setActiveFolderForMessaging(null);
+        }}
         onSuccess={handleEmailSuccess}
         onUnauthorized={handleLogout}
+        initialFolder={activeFolderForMessaging}
+      />
+
+      {/* Folder Management Modal */}
+      <FolderModal
+        isOpen={isFolderModalOpen}
+        onClose={() => setIsFolderModalOpen(false)}
+        onUnauthorized={handleLogout}
+        onSendSMSWithFolder={handleSendSMSFromFolder}
+        onSendEmailWithFolder={handleSendEmailFromFolder}
       />
 
       {/* Add Template Modal */}
@@ -468,9 +502,9 @@ const Dashboard: React.FC = () => {
               color="text-amber-600"
             />
             <QuickAction
-              icon={<MessageSquare size={24} />}
-              label="Logs"
-              onClick={() => setActiveTab("SMS Logs")}
+              icon={<Folder size={24} />}
+              label="Folder"
+              onClick={() => setIsFolderModalOpen(true)}
               color="text-violet-600"
             />
           </div>
