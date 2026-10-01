@@ -76,6 +76,7 @@ import EditCustomerModal from "../components/EditCustomerModal";
 import RescheduleModal from "../components/RescheduleModal";
 import BulkSMSImportModal from "../components/BulkSMSImportModal";
 import FolderModal, { type ContactFolder } from "../components/FolderModal";
+import EditTemplateModal from "../components/EditTemplateModal";
 import { stripHtml } from "../utils/helpers";
 
 const Dashboard: React.FC = () => {
@@ -94,12 +95,14 @@ const Dashboard: React.FC = () => {
   const [isBulkSMSImportModalOpen, setIsBulkSMSImportModalOpen] = useState(false);
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+  const [isEditTemplateModalOpen, setIsEditTemplateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false);
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
   const [activeFolderForMessaging, setActiveFolderForMessaging] =
     useState<ContactFolder | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<any | null>(null);
   const [rescheduleItem, setRescheduleItem] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -377,6 +380,18 @@ const Dashboard: React.FC = () => {
         onClose={() => setIsTemplateModalOpen(false)}
         onSuccess={fetchData}
         onUnauthorized={handleLogout}
+      />
+
+      {/* Edit Template Modal */}
+      <EditTemplateModal
+        isOpen={isEditTemplateModalOpen}
+        onClose={() => {
+          setIsEditTemplateModalOpen(false);
+          setSelectedTemplate(null);
+        }}
+        onSuccess={fetchData}
+        onUnauthorized={handleLogout}
+        template={selectedTemplate}
       />
 
       <EditCustomerModal
@@ -859,9 +874,22 @@ const Dashboard: React.FC = () => {
                           !active_tab_log_is_email &&
                           !active_tab_is_pending && (
                             <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                              {activeTab === "Customers"
-                                ? item.full_name
-                                : item.template_type}
+                              {activeTab === "Customers" ? (
+                                item.full_name
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedTemplate(item);
+                                    setIsEditTemplateModalOpen(true);
+                                  }}
+                                  className="font-bold text-blue-600 hover:text-blue-800 hover:underline flex items-center space-x-1.5 text-left"
+                                  title="Click to edit template"
+                                >
+                                  <span>{item.template_type}</span>
+                                  <Pencil size={13} className="text-blue-400" />
+                                </button>
+                              )}
                             </td>
                           )}
                         {activeTab === "Customers" && (
@@ -870,7 +898,14 @@ const Dashboard: React.FC = () => {
                           </td>
                         )}
                         {activeTab === "Templates" && (
-                          <td className="px-6 py-4 text-sm text-gray-600 italic">
+                          <td
+                            className="px-6 py-4 text-sm text-gray-600 italic cursor-pointer hover:text-gray-900 transition-colors"
+                            onClick={() => {
+                              setSelectedTemplate(item);
+                              setIsEditTemplateModalOpen(true);
+                            }}
+                            title="Click to edit template message"
+                          >
                             "{stripHtml(item.content)}"
                           </td>
                         )}
@@ -897,13 +932,24 @@ const Dashboard: React.FC = () => {
                           </td>
                         )}
                         {activeTab === "Templates" && (
-                          <td className="px-6 py-4 text-right">
+                          <td className="px-6 py-4 text-right flex justify-end space-x-2">
+                            <button
+                              onClick={() => {
+                                setSelectedTemplate(item);
+                                setIsEditTemplateModalOpen(true);
+                              }}
+                              className="p-1.5 text-blue-600 hover:text-blue-800 transition-colors bg-blue-50 rounded-lg flex items-center space-x-1"
+                              title="Edit Template"
+                            >
+                              <Pencil size={15} />
+                              <span className="text-xs font-semibold hidden sm:inline">Edit</span>
+                            </button>
                             <button
                               onClick={() => handleDeleteTemplate(item.id)}
-                              className="p-1.5 text-red-400 hover:text-red-600 transition-colors"
+                              className="p-1.5 text-red-400 hover:text-red-600 transition-colors bg-red-50 rounded-lg"
                               title="Delete Template"
                             >
-                              <Trash2 size={16} />
+                              <Trash2 size={15} />
                             </button>
                           </td>
                         )}
