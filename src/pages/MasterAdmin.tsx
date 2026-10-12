@@ -24,6 +24,12 @@ import {
   Upload,
   Calendar,
   Settings as SettingsIcon,
+  CreditCard,
+  Eye,
+  EyeOff,
+  ExternalLink,
+  Wallet,
+  RefreshCw,
 } from "lucide-react";
 
 // ── Types ──
@@ -58,6 +64,8 @@ interface Company {
   brevo_api_key: string;
   brevo_sender_email: string;
   brevo_sender_name: string;
+  paystack_public_key?: string;
+  paystack_secret_key?: string;
 }
 interface Branch {
   id: number;
@@ -69,7 +77,7 @@ interface Branch {
 // ── Main Component ──
 const MasterAdmin: React.FC = () => {
   const BASE = `${API_BASE_URL}/admin`;
-  const [view, setView] = useState<"overview" | "companies" | "manage-companies" | "sms" | "email" | "settings" | "bulk-sms" | "contacts">(
+  const [view, setView] = useState<"overview" | "companies" | "manage-companies" | "sms" | "email" | "payments" | "settings" | "bulk-sms" | "contacts">(
     (sessionStorage.getItem("masterAdminView") as any) || "overview"
   );
 
@@ -114,8 +122,40 @@ const MasterAdmin: React.FC = () => {
     brevo_api_key: "",
     brevo_sender_email: "",
     brevo_sender_name: "",
+    paystack_public_key: "",
+    paystack_secret_key: "",
   });
   const [bf, setBf] = useState({ name: "", branch_code: "", pin: "" });
+
+  // Paystack Gateway state
+  const [paystackSettings, setPaystackSettings] = useState({
+    public_key: "",
+    secret_key: "",
+    currency: "GHS",
+    is_configured: false,
+  });
+  const [loadingPaystack, setLoadingPaystack] = useState(false);
+  const [savingPaystack, setSavingPaystack] = useState(false);
+  const [showPaystackSecret, setShowPaystackSecret] = useState(false);
+
+  // Payments transactions list state
+  const [paymentTxs, setPaymentTxs] = useState<any[]>([]);
+  const [paymentTotal, setPaymentTotal] = useState(0);
+  const [paymentPage, setPaymentPage] = useState(1);
+  const [paymentSearch, setPaymentSearch] = useState("");
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("");
+  const paymentLimit = 15;
+  const [loadingPayments, setLoadingPayments] = useState(false);
+
+  // Test Payment Checkout modal state
+  const [testPayModalOpen, setTestPayModalOpen] = useState(false);
+  const [testPayForm, setTestPayForm] = useState({
+    amount: "50",
+    customer_email: "",
+    company_id: "",
+    purpose: "sms_credits",
+  });
+  const [isInitializingPayment, setIsInitializingPayment] = useState(false);
   
   // Bulk SMS state
   const [bulkForm, setBulkForm] = useState({
@@ -254,6 +294,116 @@ const MasterAdmin: React.FC = () => {
     }
   }, [view, contactPage, contactSearch]);
 
+  useEffect(() => {
+    if (view === "payments") {
+      fetchPayments(paymentPage, paymentSearch, paymentStatusFilter);
+    }
+  }, [view, paymentPage, paymentSearch, paymentStatusFilter]);
+
+  const fetchPaystackSettings = async () => {
+    setLoadingPaystack(true);
+    try {
+      const res = await fetch(`${BASE}/paystack/settings`);
+      if (res.ok) {
+        const data = await res.json();
+        setPaystackSettings({
+          public_key: data.public_key || "",
+          secret_key: data.secret_key || "",
+          currency: data.currency || "GHS",
+          is_configured: !!data.is_configured,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to load Paystack settings:", err);
+    } finally {
+      setLoadingPaystack(false);
+    }
+  };
+
+  const savePaystackSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingPaystack(true);
+    try {
+      const res = await fetch(`${BASE}/paystack/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          public_key: paystackSettings.public_key.trim(),
+          secret_key: paystackSettings.secret_key.trim(),
+          currency: paystackSettings.currency.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        flash("Paystack settings saved successfully");
+        fetchPaystackSettings();
+      } else {
+        flash(formatError(data.detail));
+      }
+    } catch (err) {
+      flash("Failed to save Paystack settings. Check connection.");
+    } finally {
+      setSavingPaystack(false);
+    }
+  };
+
+  const fetchPayments = async (page = 1, search = "", status = "") => {
+    setLoadingPayments(true);
+    try {
+      const skip = (page - 1) * paymentLimit;
+      const params = new URLSearchParams();
+      params.set("skip", skip.toString());
+      params.set("limit", paymentLimit.toString());
+      if (search.trim()) params.set("search", search.trim());
+      if (status) params.set("status", status);
+
+      const res = await fetch(`${BASE}/payments?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPaymentTxs(data.items || []);
+        setPaymentTotal(data.total || 0);
+      }
+    } catch (err) {
+      console.error("Failed to fetch payment transactions:", err);
+    } finally {
+      setLoadingPayments(false);
+    }
+  };
+
+  const handleInitializePayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!testPayForm.customer_email.trim() || !testPayForm.amount) {
+      flash("Please fill in email and amount");
+      return;
+    }
+    setIsInitializingPayment(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/payments/initialize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: parseFloat(testPayForm.amount),
+          customer_email: testPayForm.customer_email.trim(),
+          company_id: testPayForm.company_id ? parseInt(testPayForm.company_id) : null,
+          purpose: testPayForm.purpose,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.authorization_url) {
+        flash("Payment link generated! Opening Paystack checkout...");
+        setTestPayModalOpen(false);
+        window.open(data.authorization_url, "_blank");
+        fetchPayments(paymentPage, paymentSearch, paymentStatusFilter);
+      } else {
+        flash(formatError(data.detail));
+      }
+    } catch (err) {
+      flash("Failed to initialize payment");
+    } finally {
+      setIsInitializingPayment(false);
+    }
+  };
+
   const load = async () => {
     setLoading(true);
     try {
@@ -268,6 +418,12 @@ const MasterAdmin: React.FC = () => {
         const r = await fetch(`${BASE}/companies`);
         const data = await r.json();
         setCompanies(Array.isArray(data) ? data : []);
+      } else if (view === "payments") {
+        const r = await fetch(`${BASE}/companies`);
+        const data = await r.json();
+        setCompanies(Array.isArray(data) ? data : []);
+        fetchPaystackSettings();
+        fetchPayments(paymentPage, paymentSearch, paymentStatusFilter);
       } else if (view === "sms") {
         const r = await fetch(`${BASE}/logs/sms`);
         setLogs((await r.json()).items || []);
@@ -325,6 +481,8 @@ const MasterAdmin: React.FC = () => {
         brevo_api_key: "",
         brevo_sender_email: "",
         brevo_sender_name: "",
+        paystack_public_key: "",
+        paystack_secret_key: "",
       });
       flash(isUpdate ? "Company updated successfully" : "Company created successfully");
       load();
@@ -477,6 +635,7 @@ const MasterAdmin: React.FC = () => {
     { id: "sms" as const, label: "SMS Activity", icon: <Send size={18} /> },
     { id: "bulk-sms" as const, label: "Bulk SMS", icon: <Upload size={18} /> },
     { id: "email" as const, label: "Email Activity", icon: <Mail size={18} /> },
+    { id: "payments" as const, label: "Payments & Billing", icon: <CreditCard size={18} /> },
     { id: "settings" as const, label: "Settings", icon: <SettingsIcon size={18} /> },
   ];
 
@@ -723,6 +882,8 @@ const MasterAdmin: React.FC = () => {
                     brevo_api_key: "",
                     brevo_sender_email: "",
                     brevo_sender_name: "",
+                    paystack_public_key: "",
+                    paystack_secret_key: "",
                   });
                   setModal("company");
                 }}
@@ -916,6 +1077,7 @@ const MasterAdmin: React.FC = () => {
                                   <div className="flex gap-2 mr-4">
                                     <GatewayStatus label="Hubtel" active={!!c.hubtel_client_id} />
                                     <GatewayStatus label="Brevo" active={!!c.brevo_api_key} />
+                                    <GatewayStatus label="Paystack" active={!!c.paystack_public_key} />
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <button
@@ -1174,6 +1336,8 @@ const MasterAdmin: React.FC = () => {
                                     brevo_api_key: c.brevo_api_key || "",
                                     brevo_sender_email: c.brevo_sender_email || "",
                                     brevo_sender_name: c.brevo_sender_name || "",
+                                    paystack_public_key: c.paystack_public_key || "",
+                                    paystack_secret_key: c.paystack_secret_key || "",
                                   });
                                   setModal("company");
                                 }}
@@ -1205,6 +1369,327 @@ const MasterAdmin: React.FC = () => {
                     </div>
                   </div>
                 )}
+
+              {/* Payments & Billing View */}
+              {view === "payments" && (
+                <div className="space-y-8">
+                  {/* Top Banner / Actions */}
+                  <div className="bg-[#0a0a0f] border border-white/5 rounded-2xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3.5 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        <Wallet size={26} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-3">
+                          <h2 className="text-xl font-bold text-white tracking-tight">Paystack Payment Gateway</h2>
+                          <div className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                            paystackSettings.is_configured
+                              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                              : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                          }`}>
+                            <div className={`w-1.5 h-1.5 rounded-full ${paystackSettings.is_configured ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                            {paystackSettings.is_configured ? 'Active' : 'Setup Required'}
+                          </div>
+                        </div>
+                        <p className="text-gray-500 text-xs mt-1">Configure credentials, manage platform currencies, and track live transactions</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 w-full sm:w-auto">
+                      <button
+                        onClick={fetchPaystackSettings}
+                        disabled={loadingPaystack}
+                        className="px-4 py-2.5 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer"
+                        title="Reload configuration"
+                      >
+                        <RefreshCw size={14} className={loadingPaystack ? "animate-spin" : ""} />
+                        <span>Refresh</span>
+                      </button>
+                      <button
+                        onClick={() => setTestPayModalOpen(true)}
+                        disabled={!paystackSettings.is_configured}
+                        className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg shadow-emerald-600/20 flex items-center gap-2 active:scale-95 cursor-pointer ml-auto sm:ml-0"
+                      >
+                        <CreditCard size={15} />
+                        <span>Test Checkout</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Gateway Configuration Card */}
+                  <div className="bg-[#0a0a0f] border border-white/5 rounded-2xl p-6 sm:p-8 shadow-xl">
+                    <div className="flex items-center justify-between pb-6 mb-6 border-b border-white/5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+                          <Zap size={16} />
+                        </div>
+                        <div>
+                          <h3 className="text-white font-bold text-base">API Credentials & Currency</h3>
+                          <p className="text-gray-500 text-xs">These keys will be used for all online customer payments and SMS bundle checkouts</p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-gray-500 font-mono hidden sm:inline">Paystack Standard API v1</span>
+                    </div>
+
+                    <form onSubmit={savePaystackSettings} className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Public Key */}
+                        <div className="space-y-2">
+                          <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider ml-1 flex items-center justify-between">
+                            <span>Paystack Public Key</span>
+                            <span className="text-[10px] text-gray-600 font-mono">pk_live_... / pk_test_...</span>
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="pk_test_xxxxxxxxxxxxxxxxxxxxxxxx"
+                            value={paystackSettings.public_key}
+                            onChange={(e) => setPaystackSettings({ ...paystackSettings, public_key: e.target.value })}
+                            className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-700 outline-none focus:border-indigo-500/50 focus:bg-indigo-500/5 transition-all font-mono"
+                          />
+                        </div>
+
+                        {/* Secret Key with Show/Hide toggle */}
+                        <div className="space-y-2">
+                          <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider ml-1 flex items-center justify-between">
+                            <span>Paystack Secret Key</span>
+                            <span className="text-[10px] text-gray-600 font-mono">sk_live_... / sk_test_...</span>
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showPaystackSecret ? "text" : "password"}
+                              placeholder="sk_test_xxxxxxxxxxxxxxxxxxxxxxxx"
+                              value={paystackSettings.secret_key}
+                              onChange={(e) => setPaystackSettings({ ...paystackSettings, secret_key: e.target.value })}
+                              className="w-full bg-black/40 border border-white/5 rounded-xl pl-4 pr-11 py-3 text-sm text-white placeholder-gray-700 outline-none focus:border-indigo-500/50 focus:bg-indigo-500/5 transition-all font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPaystackSecret(!showPaystackSecret)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors p-1"
+                              title={showPaystackSecret ? "Hide secret key" : "Show secret key"}
+                            >
+                              {showPaystackSecret ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 items-center pt-2">
+                        {/* Currency */}
+                        <div className="space-y-2">
+                          <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider ml-1">
+                            Default Payment Currency
+                          </label>
+                          <select
+                            value={paystackSettings.currency}
+                            onChange={(e) => setPaystackSettings({ ...paystackSettings, currency: e.target.value })}
+                            className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-indigo-500/50 transition-all cursor-pointer"
+                          >
+                            <option value="GHS">GHS - Ghanaian Cedi (GH₵)</option>
+                            <option value="NGN">NGN - Nigerian Naira (₦)</option>
+                            <option value="USD">USD - US Dollar ($)</option>
+                            <option value="KES">KES - Kenyan Shilling (KSh)</option>
+                            <option value="ZAR">ZAR - South African Rand (R)</option>
+                          </select>
+                        </div>
+
+                        {/* Security notice & Save button */}
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between sm:justify-end gap-4 pt-6 sm:pt-0">
+                          <p className="text-[10px] text-gray-500 max-w-xs leading-relaxed">
+                            🔒 Keys are stored securely in database and masked on retrieval.
+                          </p>
+                          <button
+                            type="submit"
+                            disabled={savingPaystack}
+                            className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-8 py-3 rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-600/20 active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                          >
+                            {savingPaystack ? (
+                              <>
+                                <Loader2 size={16} className="animate-spin" />
+                                <span>Saving...</span>
+                              </>
+                            ) : (
+                              <span>Save Paystack Settings</span>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  </div>
+
+                  {/* Transactions Section */}
+                  <div className="space-y-4">
+                    <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-gray-400">
+                          <Activity size={16} />
+                        </div>
+                        <div>
+                          <h3 className="text-white font-bold text-base">Payment Transactions Log</h3>
+                          <p className="text-gray-500 text-xs">All card and mobile money transactions initiated through the platform</p>
+                        </div>
+                      </div>
+
+                      {/* Search & Filter */}
+                      <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+                        <div className="relative flex-1 sm:w-64">
+                          <input
+                            type="text"
+                            placeholder="Search by reference or email..."
+                            value={paymentSearch}
+                            onChange={(e) => {
+                              setPaymentSearch(e.target.value);
+                              setPaymentPage(1);
+                            }}
+                            className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2 text-xs text-white placeholder-gray-700 outline-none focus:border-indigo-500/50 transition-all font-mono"
+                          />
+                          {paymentSearch && (
+                            <button
+                              onClick={() => { setPaymentSearch(""); setPaymentPage(1); }}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                            >
+                              <X size={14} />
+                            </button>
+                          )}
+                        </div>
+
+                        <select
+                          value={paymentStatusFilter}
+                          onChange={(e) => {
+                            setPaymentStatusFilter(e.target.value);
+                            setPaymentPage(1);
+                          }}
+                          className="bg-black/40 border border-white/5 rounded-xl px-3 py-2 text-xs text-gray-300 outline-none focus:border-indigo-500/50 transition-all cursor-pointer"
+                        >
+                          <option value="">All Statuses</option>
+                          <option value="success">Success</option>
+                          <option value="pending">Pending</option>
+                          <option value="failed">Failed</option>
+                          <option value="abandoned">Abandoned</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Table */}
+                    <div className="bg-[#0a0a0f] border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse min-w-[850px]">
+                          <thead>
+                            <tr className="border-b border-white/5 bg-white/[0.02]">
+                              {["Reference", "Customer Email", "Company", "Amount", "Channel", "Purpose", "Status", "Date"].map((h) => (
+                                <th key={h} className="px-6 py-4 text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+                                  {h}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/5">
+                            {loadingPayments ? (
+                              <tr>
+                                <td colSpan={8} className="px-6 py-20 text-center text-gray-500">
+                                  <div className="flex items-center justify-center gap-2">
+                                    <Loader2 size={18} className="animate-spin text-indigo-500" />
+                                    <span className="text-sm">Loading transactions...</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            ) : paymentTxs.length === 0 ? (
+                              <tr>
+                                <td colSpan={8} className="px-6 py-20 text-center text-gray-600 italic">
+                                  No payment transactions recorded yet. Click "Test Checkout" to run a test transaction.
+                                </td>
+                              </tr>
+                            ) : (
+                              paymentTxs.map((tx) => (
+                                <tr key={tx.id} className="hover:bg-white/[0.02] transition-colors group">
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <span className="font-mono text-xs text-indigo-400 group-hover:text-indigo-300 transition-colors font-bold">
+                                      {tx.reference}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <span className="text-gray-300 text-sm font-medium">{tx.customer_email}</span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <span className="bg-indigo-500/5 text-indigo-400 text-xs px-2.5 py-1 rounded-lg border border-indigo-500/10 font-bold uppercase tracking-wider">
+                                      {tx.company_name || "Platform"}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <span className="text-white font-mono font-bold text-sm">
+                                      {tx.currency} {Number(tx.amount).toFixed(2)}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <span className="text-gray-400 text-xs capitalize">
+                                      {tx.channel || "Web Checkout"}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <span className="text-gray-400 text-xs uppercase tracking-wider font-semibold">
+                                      {tx.purpose ? tx.purpose.replace("_", " ") : "SMS Credits"}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                                      tx.status === "success"
+                                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                                        : tx.status === "pending"
+                                        ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                                        : "bg-red-500/10 text-red-400 border-red-500/30"
+                                    }`}>
+                                      <div className={`w-1 h-1 rounded-full ${
+                                        tx.status === "success" ? "bg-emerald-400" :
+                                        tx.status === "pending" ? "bg-amber-400 animate-pulse" : "bg-red-400"
+                                      }`} />
+                                      {tx.status}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-gray-600 text-xs font-medium">
+                                    {new Date(tx.created_at).toLocaleString([], {
+                                      dateStyle: 'medium',
+                                      timeStyle: 'short'
+                                    })}
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Pagination Controls */}
+                      {paymentTotal > paymentLimit && (
+                        <div className="px-6 py-4 border-t border-white/5 bg-white/[0.01] flex items-center justify-between">
+                          <span className="text-xs text-gray-500">
+                            Showing {Math.min((paymentPage - 1) * paymentLimit + 1, paymentTotal)} to{" "}
+                            {Math.min(paymentPage * paymentLimit, paymentTotal)} of {paymentTotal} payments
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => setPaymentPage(prev => Math.max(prev - 1, 1))}
+                              disabled={paymentPage === 1}
+                              className="p-1.5 rounded-lg border border-white/5 text-gray-400 hover:text-white hover:bg-white/5 transition-colors disabled:opacity-50"
+                            >
+                              <ChevronLeft size={16} />
+                            </button>
+                            <span className="text-xs text-gray-400 px-2 font-mono">
+                              Page {paymentPage} of {Math.ceil(paymentTotal / paymentLimit)}
+                            </span>
+                            <button
+                              onClick={() => setPaymentPage(prev => Math.min(prev + 1, Math.ceil(paymentTotal / paymentLimit)))}
+                              disabled={paymentPage === Math.ceil(paymentTotal / paymentLimit)}
+                              className="p-1.5 rounded-lg border border-white/5 text-gray-400 hover:text-white hover:bg-white/5 transition-colors disabled:opacity-50"
+                            >
+                              <ChevronRight size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Logs View (SMS/Email) */}
               {(view === "sms" || view === "email") && (
@@ -1589,6 +2074,17 @@ const MasterAdmin: React.FC = () => {
                           </div>
                         </div>
                       </div>
+
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-widest">
+                          <CreditCard size={14} />
+                          <span>Payment Gateway (Paystack - Optional)</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <InputField label="Public Key" placeholder="pk_test_... or pk_live_..." value={cf.paystack_public_key} onChange={v => setCf({ ...cf, paystack_public_key: v })} />
+                          <InputField label="Secret Key" type="password" placeholder="sk_test_... or sk_live_..." value={cf.paystack_secret_key} onChange={v => setCf({ ...cf, paystack_secret_key: v })} />
+                        </div>
+                      </div>
                     </>
                   ) : (
                     <div className="space-y-4">
@@ -1618,6 +2114,117 @@ const MasterAdmin: React.FC = () => {
                 </form>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Test Payment Modal ── */}
+      {testPayModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setTestPayModalOpen(false)} />
+          <div className="relative bg-[#0d0d12] border border-white/10 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col">
+            <div className="p-6 border-b border-white/5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl">
+                  <CreditCard size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">Test Paystack Checkout</h2>
+                  <p className="text-gray-500 text-xs mt-0.5">Initialize a test payment with Paystack</p>
+                </div>
+              </div>
+              <button onClick={() => setTestPayModalOpen(false)} className="p-1.5 rounded-full hover:bg-white/5 text-gray-500 hover:text-white">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleInitializePayment} className="p-6 space-y-5">
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider ml-1">
+                  Customer Email
+                </label>
+                <input
+                  required
+                  type="email"
+                  placeholder="customer@example.com"
+                  value={testPayForm.customer_email}
+                  onChange={(e) => setTestPayForm({ ...testPayForm, customer_email: e.target.value })}
+                  className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-700 outline-none focus:border-indigo-500/50 transition-all"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider ml-1">
+                  Amount ({paystackSettings.currency})
+                </label>
+                <input
+                  required
+                  type="number"
+                  min="1"
+                  step="any"
+                  placeholder="50"
+                  value={testPayForm.amount}
+                  onChange={(e) => setTestPayForm({ ...testPayForm, amount: e.target.value })}
+                  className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-700 outline-none focus:border-indigo-500/50 transition-all font-mono"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider ml-1">
+                  Company / Tenant (Optional)
+                </label>
+                <select
+                  value={testPayForm.company_id}
+                  onChange={(e) => setTestPayForm({ ...testPayForm, company_id: e.target.value })}
+                  className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-indigo-500/50 transition-all cursor-pointer"
+                >
+                  <option value="">Platform Level (Global)</option>
+                  {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider ml-1">
+                  Payment Purpose
+                </label>
+                <select
+                  value={testPayForm.purpose}
+                  onChange={(e) => setTestPayForm({ ...testPayForm, purpose: e.target.value })}
+                  className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-indigo-500/50 transition-all cursor-pointer"
+                >
+                  <option value="sms_credits">SMS Credits Top-Up</option>
+                  <option value="subscription">Monthly Subscription</option>
+                  <option value="custom">General Service Payment</option>
+                </select>
+              </div>
+
+              <div className="pt-4 border-t border-white/5 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setTestPayModalOpen(false)}
+                  className="px-5 py-2.5 rounded-xl text-xs font-semibold text-gray-400 hover:text-white hover:bg-white/10 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isInitializingPayment}
+                  className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-6 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg shadow-emerald-600/20 active:scale-95 flex items-center gap-2"
+                >
+                  {isInitializingPayment ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Opening Paystack...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ExternalLink size={14} />
+                      <span>Pay with Paystack</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
