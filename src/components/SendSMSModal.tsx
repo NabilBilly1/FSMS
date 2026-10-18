@@ -96,7 +96,7 @@ const SendSMSModal: React.FC<SendSMSModalProps> = ({
   const fetchTemplates = async () => {
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch(`${API_BASE_URL}/messages`, {
+      const response = await fetch(`${API_BASE_URL}/messages/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.status === 401) return onUnauthorized();
@@ -112,7 +112,7 @@ const SendSMSModal: React.FC<SendSMSModalProps> = ({
     setIsFetching(true);
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch(`${API_BASE_URL}/customers`, {
+      const response = await fetch(`${API_BASE_URL}/customers/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.status === 401) return onUnauthorized();

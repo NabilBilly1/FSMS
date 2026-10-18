@@ -70,7 +70,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({ isOpen, onClose, on
     };
 
     try {
-      const response = await fetch(`${API_BASE_URL}/customers`, {
+      const response = await fetch(`${API_BASE_URL}/customers/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
