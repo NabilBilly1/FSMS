@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { API_BASE_URL } from "../config";
 import { stripHtml } from "../utils/helpers";
 import {
@@ -57,6 +57,7 @@ const SendSMSModal: React.FC<SendSMSModalProps> = ({
   const [messageContent, setMessageContent] = useState("");
   const [scheduledTime, setScheduledTime] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [isFetching, setIsFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -301,6 +302,8 @@ const SendSMSModal: React.FC<SendSMSModalProps> = ({
       return;
     }
 
+    if (isLoading || isSubmittingRef.current) return;
+
     // Validation: Date cannot be in the past
     const selectedDate = new Date(scheduledTime);
     const now = new Date();
@@ -311,6 +314,7 @@ const SendSMSModal: React.FC<SendSMSModalProps> = ({
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsLoading(true);
     setError(null);
 
@@ -362,6 +366,7 @@ const SendSMSModal: React.FC<SendSMSModalProps> = ({
       setError(err.message || "An unexpected error occurred");
     } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

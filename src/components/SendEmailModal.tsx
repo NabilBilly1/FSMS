@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { API_BASE_URL } from "../config";
 import {
   X,
@@ -61,6 +61,7 @@ const SendEmailModal: React.FC<SendEmailModalProps> = ({
   const [scheduledFor, setScheduledFor] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [isFetching, setIsFetching] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -191,6 +192,9 @@ const SendEmailModal: React.FC<SendEmailModalProps> = ({
       return;
     }
 
+    if (isLoading || isSubmittingRef.current) return;
+
+    isSubmittingRef.current = true;
     setIsLoading(true);
 
     try {
@@ -252,6 +256,7 @@ const SendEmailModal: React.FC<SendEmailModalProps> = ({
       setError(err.message);
     } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

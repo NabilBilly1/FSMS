@@ -311,6 +311,43 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const handleClearAllLogs = async (type: "sms" | "email") => {
+    if (
+      !confirm(
+        `Are you sure you want to delete ALL ${type.toUpperCase()} logs for this branch? This action cannot be undone.`
+      )
+    )
+      return;
+
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${API_BASE_URL}/${type}/clear-all`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json().catch(() => ({}));
+        alert(data.message || `All ${type.toUpperCase()} logs have been permanently cleared.`);
+        fetchData();
+      } else {
+        const data = await response.json().catch(() => ({}));
+        let errorMsg = `Failed to clear ${type} logs.`;
+        if (typeof data.detail === "string") {
+          errorMsg = data.detail;
+        } else if (Array.isArray(data.detail)) {
+          errorMsg = data.detail.map((e: any) => e.msg || JSON.stringify(e)).join(", ");
+        } else if (typeof data.detail === "object" && data.detail !== null) {
+          errorMsg = JSON.stringify(data.detail);
+        }
+        alert(errorMsg);
+      }
+    } catch (err: any) {
+      console.error(`Clear all ${type} logs error:`, err);
+      setError(`Failed to clear ${type} logs. Please try again.`);
+    }
+  };
+
+
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
@@ -634,6 +671,20 @@ const Dashboard: React.FC = () => {
                 title="Clear all filters"
               >
                 Reset
+              </button>
+            )}
+
+            {/* Clear All Logs Button */}
+            {(activeTab === "SMS Logs" || activeTab === "Email Logs") && (
+              <button
+                onClick={() =>
+                  handleClearAllLogs(activeTab === "SMS Logs" ? "sms" : "email")
+                }
+                className="ml-auto flex items-center space-x-1.5 px-3 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 rounded-xl text-sm font-semibold transition-colors"
+                title={`Delete all ${activeTab === "SMS Logs" ? "SMS" : "Email"} logs from database`}
+              >
+                <Trash2 size={15} />
+                <span>Clear All {activeTab === "SMS Logs" ? "SMS" : "Email"} Logs</span>
               </button>
             )}
           </div>

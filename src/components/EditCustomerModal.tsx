@@ -38,13 +38,43 @@ const EditCustomerModal: React.FC<EditCustomerModalProps> = ({ isOpen, onClose, 
 
   if (!isOpen || !customer) return null;
 
-  const formatGhanaNumber = (phone: string): string | null => {
-    const clean = phone.replace(/\D/g, "");
-    if (clean.startsWith("0") && clean.length === 10) return "+233" + clean.slice(1);
-    if (clean.startsWith("233") && clean.length === 12) return "+" + clean;
-    if (clean.length === 12 && phone.startsWith("+233")) return phone;
-    if (clean.length === 13 && phone.startsWith("+233")) return phone;
-    if (clean.length === 9) return "+233" + clean;
+  const formatPhoneNumber = (phone: string): string | null => {
+    if (!phone) return null;
+    const raw = phone.trim();
+    const hasPlus = raw.startsWith("+");
+    const digits = raw.replace(/\D/g, "");
+    if (!digits) return null;
+
+    // Official Ghana 10-digit prefixes: 020, 023, 024, 025, 026, 027, 028, 050, 053, 054, 055, 056, 057, 059, 030-039
+    const ghanaLocalRegex = /^0(2[0345678]|5[0345679]|3[0-9])\d{7}$/;
+    const ghanaE164Regex = /^\+233(2[0345678]|5[0345679]|3[0-9])\d{7}$/;
+    const foreignE164Regex = /^\+(?!233)[1-9]\d{7,14}$/;
+
+    if (hasPlus) {
+      const candidate = "+" + digits;
+      if (candidate.startsWith("+233")) {
+        return ghanaE164Regex.test(candidate) ? candidate : null;
+      }
+      return foreignE164Regex.test(candidate) ? candidate : null;
+    }
+
+    if (raw.startsWith("00") && digits.length > 4) {
+      const candidate = "+" + digits.slice(2);
+      if (candidate.startsWith("+233")) {
+        return ghanaE164Regex.test(candidate) ? candidate : null;
+      }
+      return foreignE164Regex.test(candidate) ? candidate : null;
+    }
+
+    if (digits.startsWith("0")) {
+      return ghanaLocalRegex.test(digits) ? "+233" + digits.slice(1) : null;
+    }
+
+    if (digits.startsWith("233")) {
+      const candidate = "+" + digits;
+      return ghanaE164Regex.test(candidate) ? candidate : null;
+    }
+
     return null;
   };
 
@@ -52,9 +82,11 @@ const EditCustomerModal: React.FC<EditCustomerModalProps> = ({ isOpen, onClose, 
     e.preventDefault();
     setError(null);
 
-    const formattedPhone = formatGhanaNumber(formData.phone_number);
+    const formattedPhone = formatPhoneNumber(formData.phone_number);
     if (!formattedPhone) {
-      setError("Please enter a valid Ghana phone number.");
+      setError(
+        "Please enter a valid 10-digit official Ghana number (e.g. 024XXXXXXX, 055XXXXXXX, 020XXXXXXX) or a foreign number with '+' country code (e.g. +234..., +1..., +44...)."
+      );
       return;
     }
 

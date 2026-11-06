@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { API_BASE_URL } from "../config";
 import { stripHtml } from "../utils/helpers";
 import {
@@ -36,6 +36,7 @@ const BulkSMSImportModal: React.FC<BulkSMSImportModalProps> = ({
   const [scheduledTime, setScheduledTime] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -97,6 +98,8 @@ const BulkSMSImportModal: React.FC<BulkSMSImportModalProps> = ({
       return;
     }
 
+    if (isLoading || isSubmittingRef.current) return;
+
     // Validation: Date cannot be in past
     const selectedDate = new Date(scheduledTime);
     const now = new Date();
@@ -107,6 +110,7 @@ const BulkSMSImportModal: React.FC<BulkSMSImportModalProps> = ({
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsLoading(true);
 
     const formData = new FormData();
@@ -140,6 +144,7 @@ const BulkSMSImportModal: React.FC<BulkSMSImportModalProps> = ({
       setError(err.message || "An unexpected error occurred during bulk import");
     } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
@@ -202,7 +207,7 @@ const BulkSMSImportModal: React.FC<BulkSMSImportModalProps> = ({
             <div className="flex items-start gap-1.5 mt-2 px-1 text-gray-500">
               <AlertCircle size={14} className="shrink-0 mt-0.5" />
               <p className="text-[10px] leading-snug">
-                First column must contain **Phone Number** (duplication will be auto-removed). Second column is optionally for **Name**.
+                First column: <strong>Phone Number</strong> (e.g. 024XXXXXXX or international +234..., +1...). Second column: optionally <strong>Name</strong>. Duplicates auto-removed.
               </p>
             </div>
           </div>

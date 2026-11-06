@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { API_BASE_URL } from '../config';
 import { X, Calendar, Clock, Loader2, AlertCircle, Save } from 'lucide-react';
 
@@ -25,6 +25,7 @@ const RescheduleModal: React.FC<RescheduleModalProps> = ({
 }) => {
   const [newDate, setNewDate] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen || !pendingItem) return null;
@@ -32,6 +33,8 @@ const RescheduleModal: React.FC<RescheduleModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (isLoading || isSubmittingRef.current) return;
 
     if (!newDate) {
       setError("Please select a new date and time.");
@@ -47,6 +50,7 @@ const RescheduleModal: React.FC<RescheduleModalProps> = ({
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsLoading(true);
     try {
       const token = localStorage.getItem('token');
@@ -82,6 +86,7 @@ const RescheduleModal: React.FC<RescheduleModalProps> = ({
       setError(err.message || "An unexpected error occurred.");
     } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

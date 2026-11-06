@@ -20,43 +20,59 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({ isOpen, onClose, on
 
   if (!isOpen) return null;
 
-  const formatGhanaNumber = (phone: string): string | null => {
-    // Remove all non-numeric characters
-    const clean = phone.replace(/\D/g, "");
+  const formatPhoneNumber = (phone: string): string | null => {
+    if (!phone) return null;
+    const raw = phone.trim();
+    const hasPlus = raw.startsWith("+");
+    const digits = raw.replace(/\D/g, "");
+    if (!digits) return null;
 
-    if (clean.startsWith("0") && clean.length === 10) {
-      return "+233" + clean.slice(1);
+    // Official Ghana 10-digit prefixes: 020, 023, 024, 025, 026, 027, 028, 050, 053, 054, 055, 056, 057, 059, 030-039
+    const ghanaLocalRegex = /^0(2[0345678]|5[0345679]|3[0-9])\d{7}$/;
+    const ghanaE164Regex = /^\+233(2[0345678]|5[0345679]|3[0-9])\d{7}$/;
+    const foreignE164Regex = /^\+(?!233)[1-9]\d{7,14}$/;
+
+    // 1. Explicit + country code
+    if (hasPlus) {
+      const candidate = "+" + digits;
+      if (candidate.startsWith("+233")) {
+        return ghanaE164Regex.test(candidate) ? candidate : null;
+      }
+      return foreignE164Regex.test(candidate) ? candidate : null;
     }
 
-    if (clean.startsWith("233") && clean.length === 12) {
-      return "+" + clean;
+    // 2. 00 international prefix
+    if (raw.startsWith("00") && digits.length > 4) {
+      const candidate = "+" + digits.slice(2);
+      if (candidate.startsWith("+233")) {
+        return ghanaE164Regex.test(candidate) ? candidate : null;
+      }
+      return foreignE164Regex.test(candidate) ? candidate : null;
     }
 
-    if (clean.startsWith("+233") || (clean.length === 12 && phone.startsWith("+233"))) {
-      // if already has +, just ensure it's +233 followed by 9 digits
-      const digits = phone.replace(/\D/g, "");
-      if (digits.length === 12) return "+" + digits;
+    // 3. Local Ghana number: MUST be strictly 10 digits starting with 0 and an official Ghana prefix
+    if (digits.startsWith("0")) {
+      return ghanaLocalRegex.test(digits) ? "+233" + digits.slice(1) : null;
     }
 
-    if (clean.length === 13 && phone.startsWith("+233")) {
-      return phone;
+    // 4. Ghana with 233 prefix (12 digits total corresponding to 10-digit official Ghana number)
+    if (digits.startsWith("233")) {
+      const candidate = "+" + digits;
+      return ghanaE164Regex.test(candidate) ? candidate : null;
     }
 
-    // fallback for 9 digits
-    if (clean.length === 9) {
-      return "+233" + clean;
-    }
-
-    return null; // invalid
+    return null;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    const formattedPhone = formatGhanaNumber(formData.phone_number);
+    const formattedPhone = formatPhoneNumber(formData.phone_number);
     if (!formattedPhone) {
-      setError("Please enter a valid Ghana phone number (e.g., 024XXXXXXX or +233...)");
+      setError(
+        "Please enter a valid 10-digit official Ghana number (e.g. 024XXXXXXX, 055XXXXXXX, 020XXXXXXX) or a foreign number with '+' country code (e.g. +234..., +1..., +44...)."
+      );
       return;
     }
 
@@ -150,7 +166,10 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({ isOpen, onClose, on
             </div>
 
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">Phone Number</label>
+              <div className="flex justify-between items-center mb-2">
+                <label className="block text-sm font-bold text-gray-700">Phone Number</label>
+                <span className="text-[11px] text-gray-400">Ghana (024...) or Foreign (+234...)</span>
+              </div>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400">
                   <Phone size={18} />
@@ -158,7 +177,7 @@ const AddCustomerModal: React.FC<AddCustomerModalProps> = ({ isOpen, onClose, on
                 <input
                   required
                   type="tel"
-                  placeholder="e.g. +233 24 000 0000"
+                  placeholder="e.g. 024 123 4567 or +234 803 123 4567"
                   className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900 placeholder-gray-400"
                   value={formData.phone_number}
                   onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
