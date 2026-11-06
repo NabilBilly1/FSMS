@@ -118,7 +118,7 @@ const FolderModal: React.FC<FolderModalProps> = ({
     setIsLoadingCustomers(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`${API_BASE_URL}/customers?limit=1000`, {
+      const res = await fetch(`${API_BASE_URL}/customers/?limit=1000`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.status === 401) return onUnauthorized();

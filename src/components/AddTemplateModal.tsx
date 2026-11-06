@@ -40,7 +40,7 @@ const AddTemplateModal: React.FC<AddTemplateModalProps> = ({ isOpen, onClose, on
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${API_BASE_URL}/messages`, {
+      const response = await fetch(`${API_BASE_URL}/messages/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
